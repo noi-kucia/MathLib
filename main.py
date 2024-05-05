@@ -1,16 +1,18 @@
+import builtins
 import re
 import math
 from typing import List, Tuple
 
 
 def pn_split_via_operator(tokens) -> Tuple:
-    """ This functon returns tuple of most external operator or funtion and two or 1 argument of it
-    in PN representation for instance: [- 5 * 3 sin x] -> ('-', [5], [* 3 sin x]) that represents difference of
-    5 and 3sin(x)
-    [ sin * ^ x 2 3 ] -> ( 'sin', [* ^ x 2 3]) that represents sinus of ( 3x^2)"""
+    """ This functon returns tuple of most external operator or function and two or 1 argument of it
+    in PN representation. If it's function, None will be returned as second argument.
+    For instance:
+        [- 5 * 3 sin x] -> ('-', [5], [* 3 sin x]) that represents difference of 5 and 3sin(x)
+        [ sin * ^ x 2 3 ] -> ( 'sin', [* ^ x 2 3], None) that represents sinus of ( 3x^2)"""
     required_operands = 1
     if tokens[0] in Formula.functions:
-        return (tokens[0], tokens[1:],)
+        return (tokens[0], tokens[1:], None)
     for i, token in enumerate(tokens[1:]):
         if type(token) in (float, int) or token == 'x':
             required_operands -= 1
@@ -31,8 +33,14 @@ class Formula:
                  'ln': lambda x: math.log(math.e, x)}
     function_precedence = 8
 
-    def __init__(self, formula: str):
-        self.tokens = self.translate_to_pn(formula)
+    def __init__(self, formula):
+        match type(formula):
+            case builtins.list:
+                self.tokens = formula
+            case builtins.str:
+                self.tokens = self.translate_to_pn(formula)
+            case _:
+                raise Exception(f'unknown input type: {type(formula)}')
 
     def __str__(self):
         for token in self.tokens:
@@ -170,8 +178,95 @@ class Formula:
             return infix
 
 
-print(Formula('x^2 + 3'))
+def is_pn_constant(tokens: List):
+    return True if type(tokens[0]) in (int, float) else False
+
+
+def is_pn_single_var(tokens: List):
+    return True if len(tokens) == 1 and tokens[0] == 'x' else False
+
+
+def pn_prettify(tokens: List):
+    """
+    :param tokens:
+    :return: mathematically equal formula in optimized form
+    It deletes all '+0' or '*1' unnecessary operations, sums all 'constant+constant' expressions to a single token
+    and so on
+    """
+    return tokens   # TODO
+
+
+def __derivative_pn(tokens: List):
+    if len(tokens) == 1:
+        if is_pn_constant(tokens):  # if function is constant
+            return [0]
+        elif is_pn_single_var(tokens):  # function is linear
+            return [1]
+        else:
+            raise Exception(f'unknown first token: {tokens[0]} \nliteral was expected')
+    operator, arg1, arg2 = pn_split_via_operator(tokens)
+
+    if operator in Formula.functions:  # function is function of 1 argument
+        #TODO
+        pass
+    elif operator in Formula.operators_precedence:  # function consists of 2 joined by operator
+        match operator:
+            case '+':
+                # derivative of sum is sum of derivatives
+                return pn_prettify(['+'] + __derivative_pn(arg1) + __derivative_pn(arg2))
+
+            case '-':
+                # derivative of difference is difference of derivatives
+                return pn_prettify(['-'] + __derivative_pn(arg1) + __derivative_pn(arg2))
+
+            case '*':
+                # (f(x)*g(x))` = f`(x)*g(x)+f(x)*g`(x)
+                if is_pn_constant(arg1):
+                    return pn_prettify(['*'] + arg1 + __derivative_pn(arg2))
+                if is_pn_constant(arg2):
+                    return pn_prettify(['*'] + arg2 + __derivative_pn(arg1))
+                return pn_prettify(['+'] + ['*'] + __derivative_pn(arg1) + arg2 + ['*'] + arg1 + __derivative_pn(arg2))
+            case '/':
+                # if numerator of fraction is constant, then treat it like constant * power function
+                # if denumerator is constant, then treat it like constant * some function
+                # in other case, use the quotient rule
+                if is_pn_constant(arg1):
+                    return pn_prettify(['*'] + arg1 + __derivative_pn(['^'] + arg2 + [-1]))
+                if is_pn_constant(arg2):
+                    return pn_prettify(['/'] + __derivative_pn(arg1) + arg2)
+                # else #TODO
+                return
+
+            case '^':
+                # There's 3 cases:
+                # 1. base is independent of x then it's exponential function a^x -> (e^(x*ln(a)))` = e^(x*ln(a))*(x)`
+                # 2. exponent is independent of x then it power function x^n -> n*x^(n-1)*(x)`
+                # 3. both depends on x #TODO
+                if 'x' not in arg1:
+                    pass
+                if 'x' not in arg2:
+                    return pn_prettify(['*', '*'] + arg2 + ['^'] + arg1 + pn_prettify(
+                        ['-'] + arg2 + [1]) + __derivative_pn(arg1))
+                # else
+                return
+
+    else:
+        raise Exception(f'unknown operator type: {tokens[0]} \nmathematical operator or function was expected')
+
+
+def derivative(function) -> Formula:
+    """
+    requires list of pn tokens or Formula object of single variable function on input and then returns
+    derivative of it in form of Formula object.
+    If it can't calculate derivative, it will raise exception.
+    """
+    if not type(function) == list:
+        function = function.tokens
+    return Formula(__derivative_pn(function))
+
+
+
+print(derivative(Formula('-x^2/5 + 3x')))
 print(Formula('x^3 / 3'))
 print(Formula('(1+1/x)^((x^2)*3)+5'))
 
-# TODO: сделать метод получить производную, которая будет возвращать новую формулу-производную
