@@ -5,11 +5,13 @@ from typing import List, Tuple
 
 
 def pn_split_via_operator(tokens) -> Tuple:
-    """ This functon returns tuple of most external operator or function and two or 1 argument of it
+    """
+    This functon returns tuple of most external operator or function and two or 1 argument of it
     in PN representation. If it's function, None will be returned as second argument.
     For instance:
         [- 5 * 3 sin x] -> ('-', [5], [* 3 sin x]) that represents difference of 5 and 3sin(x)
-        [ sin * ^ x 2 3 ] -> ( 'sin', [* ^ x 2 3], None) that represents sinus of ( 3x^2)"""
+        [ sin * ^ x 2 3 ] -> ( 'sin', [* ^ x 2 3], None) that represents sinus of ( 3x^2)
+    """
     required_operands = 1
     if tokens[0] in Formula.functions:
         return (tokens[0], tokens[1:], None)
@@ -24,8 +26,10 @@ def pn_split_via_operator(tokens) -> Tuple:
 
 
 class Formula:
-    """ The essence of this class is to translate mathematical formula from the string representation
-    into a list of tokens that represents Polish notation form of it and keep it inside"""
+    """
+    The essence of this class is to translate mathematical formula from the string representation
+    into a list of tokens that represents Polish notation form of it and keep it inside
+    """
 
     operators_precedence = {'-': 1, '+': 1, '*': 4, '/': 4, '%': 4, '^': 5, '(': 10, ')': 10}
     functions = {'abs': abs, 'sqrt': math.sqrt, 'rt': math.sqrt, 'exp': math.exp, 'tan': math.tan, 'tg': math.tan,
@@ -193,7 +197,86 @@ def pn_prettify(tokens: List):
     It deletes all '+0' or '*1' unnecessary operations, sums all 'constant+constant' expressions to a single token
     and so on
     """
-    return tokens   # TODO
+    if len(tokens) == 1:
+        return tokens
+
+    operator, arg1, arg2 = pn_split_via_operator(tokens)
+
+    if operator in Formula.operators_precedence:
+        match operator:
+            case '+':
+                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
+
+                if len(arg1) == 1:
+                    if arg1[0] == 0:
+                        return arg2
+                if len(arg2) == 1:
+                    if arg2[0] == 0:
+                        return arg1
+
+                if is_pn_constant(arg1) and is_pn_constant(arg2):  # if both summand are constants, we can calculate it
+                    return [arg1[0] + arg2[0]]
+
+                return ['+'] + arg1 + arg2
+
+            case '-':
+                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
+
+                if len(arg1) == 1:
+                    if arg1[0] == 0:
+                        return pn_prettify(['*'] + [-1] + arg2)
+                if len(arg2) == 1:
+                    if arg2[0] == 0:
+                        return arg1
+
+                if is_pn_constant(arg1) and is_pn_constant(arg2):
+                    return [arg1[0] - arg2[0]]
+
+                return ['-'] + arg1 + arg2
+
+            case '*':
+                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
+
+                if is_pn_constant(arg1) and is_pn_constant(arg2):
+                    #  Approximation error !!!
+                    return [arg1[0] * arg2[0]]
+
+                if len(arg1) == 1:
+                    if arg1[0] == 1:
+                        return arg2
+                if len(arg2) == 1:
+                    if arg2[0] == 1:
+                        return arg1
+
+                return ['*'] + arg1 + arg2
+
+            case '/':
+                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
+
+                if len(arg1) == 1:
+                    if arg1[0] == 0:
+                        return [0]
+                if len(arg2) == 1:
+                    if arg2[0] == 1:
+                        return arg1
+
+                return ['/'] + arg1 + arg2
+
+            case '^':
+                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
+
+                if len(arg1) == 1:
+                    if arg1[0] == 1:
+                        return [1]
+                if len(arg2) == 1:
+                    if arg2[0] == 1:
+                        return arg1
+                    if arg2[0] == 0:
+                        return [1]
+
+                return ['^'] + arg1 + arg2
+
+    return tokens  # TODO
 
 
 def __derivative_pn(tokens: List):
@@ -207,17 +290,14 @@ def __derivative_pn(tokens: List):
     operator, arg1, arg2 = pn_split_via_operator(tokens)
 
     if operator in Formula.functions:  # function is function of 1 argument
-        #TODO
+        # TODO
         pass
     elif operator in Formula.operators_precedence:  # function consists of 2 joined by operator
         match operator:
-            case '+':
+            case '+' | '-':
                 # derivative of sum is sum of derivatives
-                return pn_prettify(['+'] + __derivative_pn(arg1) + __derivative_pn(arg2))
-
-            case '-':
                 # derivative of difference is difference of derivatives
-                return pn_prettify(['-'] + __derivative_pn(arg1) + __derivative_pn(arg2))
+                return pn_prettify([operator] + __derivative_pn(arg1) + __derivative_pn(arg2))
 
             case '*':
                 # (f(x)*g(x))` = f`(x)*g(x)+f(x)*g`(x)
@@ -265,8 +345,7 @@ def derivative(function) -> Formula:
     return Formula(__derivative_pn(function))
 
 
-
-print(derivative(Formula('-x^2/5 + 3x')))
-print(Formula('x^3 / 3'))
-print(Formula('(1+1/x)^((x^2)*3)+5'))
-
+function1 = Formula('-x^2/5 + 3x')
+function2 = Formula('8x^3-2x^2+0')
+print(f'function: {function1}, derivative: {derivative(function1)}')
+print(f'function: {function2}, derivative: {derivative(function2)}')
