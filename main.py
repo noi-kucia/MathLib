@@ -244,9 +244,28 @@ def pn_prettify(tokens: List):
                 if len(arg1) == 1:
                     if arg1[0] == 1:
                         return arg2
+
+                    if is_pn_constant(arg1) and len(arg2) != 1:
+                        operator_p, arg1_p, arg2_p = pn_split_via_operator(arg2)
+                        match operator_p:
+                            case '*':
+                                if is_pn_constant(arg1_p):
+                                    return ['*', arg1[0]*arg1_p[0]] + arg2_p
+                                if is_pn_constant(arg2_p):
+                                    return ['*', arg1[0]*arg2_p[0]] + arg1_p
+
                 if len(arg2) == 1:
                     if arg2[0] == 1:
                         return arg1
+
+                    if is_pn_constant(arg2) and len(arg1) != 1:
+                        operator_p, arg1_p, arg2_p = pn_split_via_operator(arg1)
+                        match operator_p:
+                            case '*':
+                                if is_pn_constant(arg1_p):
+                                    return ['*', arg2[0]*arg1_p[0]] + arg2_p
+                                if is_pn_constant(arg2_p):
+                                    return ['*', arg2[0]*arg2_p[0]] + arg1_p
 
                 return ['*'] + arg1 + arg2
 
