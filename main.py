@@ -174,6 +174,8 @@ class Formula:
         else:
             conjunction_precedence = Formula.operators_precedence[operator]
             infix = ''
+            if operator == '/' and len(arg2) > 1:
+                return f'{self.translate_to_infix(arg1)}/({self.translate_to_infix(arg2)})'
             if len(arg1) == 1:
                 infix += str(arg1[0])
             elif arg1[0] in Formula.functions:
@@ -364,6 +366,8 @@ def __derivative_pn(tokens: List):
                 return pn_prettify(['*'] + __derivative_pn(argument) + ['cos'] + argument)
             case 'cos':
                 return pn_prettify(['*'] + __derivative_pn(argument) + ['*', -1, 'sin'] + argument)
+            case 'sqrt':
+                return pn_prettify(['/'] + __derivative_pn(argument) +['*', 2, 'sqrt'] + argument)
 
     elif operator in Formula.operators_precedence:  # function consists of 2 joined by operator
         match operator:
@@ -421,9 +425,9 @@ def derivative(function) -> Formula:
 
 
 function1 = Formula('sin (2x)')
-function2 = Formula('8x^3 - 2x^2 + 0')
+function2 = Formula('8sqrt(x^7) - 2x^2 + 0')
 function3 = Formula('5sin(3x^2)/(-2)')
-function4 = Formula('(cos(3x)) ^ 2 - 2 sin(x)')
+function4 = Formula('(cos(3x)) ^ (2/5) - 2 sin(x)')
 print(f'function: {function1}, derivative: {derivative(function1)}')
 print(f'function: {function2}, derivative: {derivative(function2)}')
 print(f'function: {function3}, derivative: {derivative(function3)}')
