@@ -4,6 +4,11 @@ import math
 from typing import List, Tuple
 
 
+class UnableToDifferentiateException(Exception):
+    def __init__(self, message='cannot find derivative!'):
+        super().__init__(message)
+
+
 def pn_split_via_operator(tokens) -> Tuple:
     """
     This functon returns tuple of most external operator or function and two or 1 argument of it
@@ -31,7 +36,7 @@ class Formula:
     into a list of tokens that represents Polish notation form of it and keep it inside
     """
 
-    operators_precedence = {'-': 1, '+': 1, '*': 4, '/': 4, '%': 4, '^': 5, '(': 10, ')': 10}
+    operators_precedence = {'-': 1, '+': 1, '*': 4, '/': 4, '%': 4, '^': 6, '(': 10, ')': 10}
     functions = {'abs': abs, 'sqrt': math.sqrt, 'rt': math.sqrt, 'exp': math.exp, 'tan': math.tan, 'tg': math.tan,
                  'sin': math.sin, 'cos': math.cos, 'log': math.log10, 'lg': math.log10,
                  'ln': lambda x: math.log(math.e, x)}
@@ -48,7 +53,11 @@ class Formula:
 
     def __str__(self):
         for token in self.tokens:
-            return f'infix: [{self.translate_to_infix()}], PN: [{" ".join(list(map(str, self.tokens)))}]'
+            return f'[{self.translate_to_infix()}]'
+
+    def get_pn_string(self) -> str:
+        """Returns formula in polish notation"""
+        return " ".join(list(map(str, self.tokens)))
 
     def translate_to_pn(self, formula: str):
 
@@ -122,7 +131,7 @@ class Formula:
                             break
                     operators_stack.append(token)
 
-            elif symbol_to_parse.isalpha():  # function, variable or constant
+            elif symbol_to_parse.isalpha():  # function, variable or scalar
                 token = symbol_to_parse
 
                 for next_symb in formula[symb_i + 1:]:
@@ -135,6 +144,9 @@ class Formula:
                 if token == 'x':
                     pn_formula.append(token)
                 elif token in self.functions:
+                    while operators_stack and self.operators_precedence[operators_stack[-1]] > self.function_precedence \
+                            and operators_stack[-1] != ')':
+                        pn_formula.append(operators_stack.pop())
                     operators_stack.append(token)
                 else:
                     raise Exception(f'unknown token "{token}"')
@@ -149,40 +161,40 @@ class Formula:
 
         pn_formula = list(reversed(pn_formula))  # reversing result
 
-        return pn_formula
+        return pn_prettify(pn_formula)
 
     def translate_to_infix(self, __remainder=None):
         if not __remainder:
             __remainder = self.tokens
         if len(__remainder) == 1:
             return str(__remainder[0])
-        splitted = pn_split_via_operator(__remainder)
-        if len(splitted) == 2:
-            return f'{splitted[0]}({self.translate_to_infix(splitted[1])})'
+        operator, arg1, arg2 = pn_split_via_operator(__remainder)
+        if operator in Formula.functions:
+            return f'{operator}({self.translate_to_infix(arg1)})'
         else:
-            conjuction_precedence = Formula.operators_precedence[splitted[0]]
+            conjunction_precedence = Formula.operators_precedence[operator]
             infix = ''
-            if len(splitted[1]) == 1:
-                infix += str(splitted[1][0])
-            elif splitted[1][0] in Formula.functions:
-                infix += self.translate_to_infix(splitted[1])
-            elif Formula.operators_precedence[splitted[1][0]] < conjuction_precedence:
-                infix += f'({self.translate_to_infix(splitted[1])})'
+            if len(arg1) == 1:
+                infix += str(arg1[0])
+            elif arg1[0] in Formula.functions:
+                infix += f'({self.translate_to_infix(arg1)})'
+            elif Formula.operators_precedence[arg1[0]] < conjunction_precedence:
+                infix += f'({self.translate_to_infix(arg1)})'
             else:
-                infix += f'{self.translate_to_infix(splitted[1])}'
-            infix += splitted[0]
-            if len(splitted[2]) == 1:
-                infix += str(splitted[2][0])
-            elif splitted[2][0] in Formula.functions:
-                infix += self.translate_to_infix(splitted[2])
-            elif Formula.operators_precedence[splitted[2][0]] < conjuction_precedence:
-                infix += f'({self.translate_to_infix(splitted[2])})'
+                infix += f'{self.translate_to_infix(arg1)}'
+            infix += operator
+            if len(arg2) == 1:
+                infix += str(arg2[0])
+            elif arg2[0] in Formula.functions:
+                infix += self.translate_to_infix(arg2)
+            elif Formula.operators_precedence[arg2[0]] < conjunction_precedence:
+                infix += f'({self.translate_to_infix(arg2)})'
             else:
-                infix += f'{self.translate_to_infix(splitted[2])}'
+                infix += f'{self.translate_to_infix(arg2)}'
             return infix
 
 
-def is_pn_constant(tokens: List):
+def is_scalar_pn(tokens: List):
     return True if type(tokens[0]) in (int, float) else False
 
 
@@ -194,7 +206,7 @@ def pn_prettify(tokens: List):
     """
     :param tokens:
     :return: mathematically equal formula in optimized form
-    It deletes all '+0' or '*1' unnecessary operations, sums all 'constant+constant' expressions to a single token
+    It deletes all '+0' or '*1' unnecessary operations, sums all 'scalar+scalar' expressions to a single token
     and so on
     """
     if len(tokens) == 1:
@@ -214,7 +226,7 @@ def pn_prettify(tokens: List):
                     if arg2[0] == 0:
                         return arg1
 
-                if is_pn_constant(arg1) and is_pn_constant(arg2):  # if both summand are constants, we can calculate it
+                if is_scalar_pn(arg1) and is_scalar_pn(arg2):  # if both summand are scalars, we can calculate it
                     return [arg1[0] + arg2[0]]
 
                 return ['+'] + arg1 + arg2
@@ -229,57 +241,93 @@ def pn_prettify(tokens: List):
                     if arg2[0] == 0:
                         return arg1
 
-                if is_pn_constant(arg1) and is_pn_constant(arg2):
-                    return [arg1[0] - arg2[0]]
+                if is_scalar_pn(arg2):
+                    if is_scalar_pn(arg1):
+                        return [arg1[0] - arg2[0]]
+                    if arg2[0] < 0:  # expression - (-scalar) = expression + scalar
+                        return ['+'] + arg1 + [arg2[0] * -1]
 
                 return ['-'] + arg1 + arg2
 
             case '*':
                 arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
 
-                if is_pn_constant(arg1) and is_pn_constant(arg2):
-                    #  Approximation error !!!
+                if is_scalar_pn(arg2):  # if one of multipliers is scalar, it must be on the first place
+                    arg1, arg2 = arg2, arg1
+
+                if not is_scalar_pn(arg1):  # if any of multipliers ain't scalars
+
+                    if arg2[0] == '*':  # if one of multipliers is product, it must be on the first place
+                        arg1, arg2 = arg2, arg1
+
+                    if arg1[0] == '*':
+                        _, arg1_scalar, arg1_expr = pn_split_via_operator(arg1)
+                        if arg2[0] == '*':
+                            _, arg2_scalar, arg2_expr = pn_split_via_operator(arg2)
+                            if is_scalar_pn(arg1_scalar):
+                                if is_scalar_pn(arg2_scalar):
+                                    return ['*', arg1_scalar[0] * arg2_scalar[0], '*'] + arg1_expr + arg2_expr
+                                return ['*'] + arg1_scalar + ['*'] + arg1_expr + arg2
+                            elif is_scalar_pn(arg2_scalar):
+                                return ['*'] + arg2_scalar + ['*'] + arg1 + arg2_expr
+                        elif is_scalar_pn(arg1_scalar):
+                            return ['*'] + arg1_scalar + ['*'] + arg1_expr + arg2
+                        else:
+                            return ['*'] + arg1 + arg2
+
+                if is_scalar_pn(arg2):
+                    # product of two scalars is scalar
                     return [arg1[0] * arg2[0]]
 
-                if len(arg1) == 1:
-                    if arg1[0] == 1:
-                        return arg2
+                # since this point, we have product of scalar and non-scalar expression ( scalar*expression )
+                scalar, expr = arg1[0], arg2
 
-                    if is_pn_constant(arg1) and len(arg2) != 1:
-                        operator_p, arg1_p, arg2_p = pn_split_via_operator(arg2)
-                        match operator_p:
-                            case '*':
-                                if is_pn_constant(arg1_p):
-                                    return ['*', arg1[0]*arg1_p[0]] + arg2_p
-                                if is_pn_constant(arg2_p):
-                                    return ['*', arg1[0]*arg2_p[0]] + arg1_p
+                if scalar == 1:  # 1*expr = expr
+                    return expr
+                if scalar == 0:  # 0*expr = 0
+                    return [0]
+                if expr == ['x']:  # scalar*x
+                    return ['*', scalar, 'x']
 
-                if len(arg2) == 1:
-                    if arg2[0] == 1:
-                        return arg1
+                # now splitting expression
+                expression_operator, expression_arg1, expression_arg2 = pn_split_via_operator(expr)
+                match expression_operator:
+                    case '*':
+                        if is_scalar_pn(expression_arg1):
+                            return ['*', arg1[0] * expression_arg1[0]] + expression_arg2
+                    case '/':
+                        nomin, denomin = expression_arg1, expression_arg2
 
-                    if is_pn_constant(arg2) and len(arg1) != 1:
-                        operator_p, arg1_p, arg2_p = pn_split_via_operator(arg1)
-                        match operator_p:
-                            case '*':
-                                if is_pn_constant(arg1_p):
-                                    return ['*', arg2[0]*arg1_p[0]] + arg2_p
-                                if is_pn_constant(arg2_p):
-                                    return ['*', arg2[0]*arg2_p[0]] + arg1_p
+                        if is_scalar_pn(nomin):
+                            return ['/', scalar] + denomin  # scalar*(scalar/expr) = scalar * expr
+                        if nomin == ['x']:
+                            return ['*'] + arg1 + arg2
+
+                        nomin_operator, nomin_arg1, nomin_arg2 = pn_split_via_operator(nomin)
+                        if nomin_operator == '*' and is_scalar_pn(nomin_arg1):
+                            #  scalar * [(scalar*expr)/ expr]= (scalar*expr)/expr
+                            return ['/', '*', scalar * nomin_arg1[0]] + nomin_arg2 + denomin
 
                 return ['*'] + arg1 + arg2
 
             case '/':
-                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
+                nominator, denominator = pn_prettify(arg1), pn_prettify(arg2)
 
-                if len(arg1) == 1:
-                    if arg1[0] == 0:
-                        return [0]
-                if len(arg2) == 1:
-                    if arg2[0] == 1:
-                        return arg1
+                if nominator == [0]:
+                    return [0]
+                if denominator == [1]:
+                    return nominator
 
-                return ['/'] + arg1 + arg2
+                if len(nominator) > 2:
+                    nominator_operator, nominator_arg1, nominator_arg2 = pn_split_via_operator(nominator)
+
+                    # (expression/scalar)/scalar = expression/scalar
+                    if is_scalar_pn(denominator):
+                        if nominator_operator == '/' and is_scalar_pn(nominator_arg2):
+                            if type(denominator[0]) == int and type(nominator_arg2[0]) == int:  # to avoid float error
+                                return ['/'] + nominator_arg1 + [denominator[0] * nominator_arg2[0]]
+
+                return ['/'] + nominator + denominator
 
             case '^':
                 arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
@@ -295,12 +343,12 @@ def pn_prettify(tokens: List):
 
                 return ['^'] + arg1 + arg2
 
-    return tokens  # TODO
+    return tokens
 
 
 def __derivative_pn(tokens: List):
     if len(tokens) == 1:
-        if is_pn_constant(tokens):  # if function is constant
+        if is_scalar_pn(tokens):  # if function is scalar
             return [0]
         elif is_pn_single_var(tokens):  # function is linear
             return [1]
@@ -309,8 +357,14 @@ def __derivative_pn(tokens: List):
     operator, arg1, arg2 = pn_split_via_operator(tokens)
 
     if operator in Formula.functions:  # function is function of 1 argument
-        # TODO
-        pass
+        functor, argument = operator, arg1
+
+        match functor:
+            case 'sin':
+                return pn_prettify(['*'] + __derivative_pn(argument) + ['cos'] + argument)
+            case 'cos':
+                return pn_prettify(['*'] + __derivative_pn(argument) + ['*', -1, 'sin'] + argument)
+
     elif operator in Formula.operators_precedence:  # function consists of 2 joined by operator
         match operator:
             case '+' | '-':
@@ -320,24 +374,25 @@ def __derivative_pn(tokens: List):
 
             case '*':
                 # (f(x)*g(x))` = f`(x)*g(x)+f(x)*g`(x)
-                if is_pn_constant(arg1):
+                if is_scalar_pn(arg1):
                     return pn_prettify(['*'] + arg1 + __derivative_pn(arg2))
-                if is_pn_constant(arg2):
+                if is_scalar_pn(arg2):
                     return pn_prettify(['*'] + arg2 + __derivative_pn(arg1))
                 return pn_prettify(['+'] + ['*'] + __derivative_pn(arg1) + arg2 + ['*'] + arg1 + __derivative_pn(arg2))
             case '/':
-                # if numerator of fraction is constant, then treat it like constant * power function
-                # if denumerator is constant, then treat it like constant * some function
+                # if numerator of fraction is scalar, then treat it like scalar * power function
+                # if denumerator is scalar, then treat it like scalar * some function
                 # in other case, use the quotient rule
-                if is_pn_constant(arg1):
+                if is_scalar_pn(arg1):
                     return pn_prettify(['*'] + arg1 + __derivative_pn(['^'] + arg2 + [-1]))
-                if is_pn_constant(arg2):
+                if is_scalar_pn(arg2):
                     return pn_prettify(['/'] + __derivative_pn(arg1) + arg2)
-                # else #TODO
-                return
+                # else
+                return pn_prettify(['/', '+', '*'] + __derivative_pn(arg1) + arg2 +
+                                   ['*'] + arg1 + __derivative_pn(arg2) + ['^'] + arg2 + [2])
 
             case '^':
-                # There's 3 cases:
+                # There are 3 cases:
                 # 1. base is independent of x then it's exponential function a^x -> (e^(x*ln(a)))` = e^(x*ln(a))*(x)`
                 # 2. exponent is independent of x then it power function x^n -> n*x^(n-1)*(x)`
                 # 3. both depends on x #TODO
@@ -347,10 +402,11 @@ def __derivative_pn(tokens: List):
                     return pn_prettify(['*', '*'] + arg2 + ['^'] + arg1 + pn_prettify(
                         ['-'] + arg2 + [1]) + __derivative_pn(arg1))
                 # else
-                return
+                raise UnableToDifferentiateException()
 
     else:
-        raise Exception(f'unknown operator type: {tokens[0]} \nmathematical operator or function was expected')
+        raise UnableToDifferentiateException(
+            f'unknown operator type: {tokens[0]} \nmathematical operator or function was expected')
 
 
 def derivative(function) -> Formula:
@@ -364,7 +420,11 @@ def derivative(function) -> Formula:
     return Formula(__derivative_pn(function))
 
 
-function1 = Formula('-x^2/5 + 3x')
-function2 = Formula('8x^3-2x^2+0')
+function1 = Formula('sin (2x)')
+function2 = Formula('8x^3 - 2x^2 + 0')
+function3 = Formula('5sin(3x^2)/(-2)')
+function4 = Formula('(cos(3x)) ^ 2 - 2 sin(x)')
 print(f'function: {function1}, derivative: {derivative(function1)}')
 print(f'function: {function2}, derivative: {derivative(function2)}')
+print(f'function: {function3}, derivative: {derivative(function3)}')
+print(f'function: {function4}, derivative: {derivative(function4)}')
