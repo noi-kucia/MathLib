@@ -36,6 +36,8 @@ def pn_to_latex(tokens: List):
     if operator in Formula.functions:
         if operator == 'exp':
             return r'e^{' + pn_to_latex(arg1) + '}'
+        if operator == 'sqrt':
+            return r'\sqrt{' + pn_to_latex(arg1) + '}'
         return f'\\{operator}\\left({pn_to_latex(arg1)}\\right)'
 
     elif operator in Formula.operators_precedence:
@@ -44,6 +46,9 @@ def pn_to_latex(tokens: List):
             return '\\frac{' + pn_to_latex(arg1) + '}{' + pn_to_latex(arg2) + '}'
         if operator == '^':
             return pn_to_latex(arg1) + '^{' + pn_to_latex(arg2) + '}'
+        if operator == '+':
+            # TODO: expr + (-expr) = expr - expr
+            pass
 
         operator_precedence = Formula.operators_precedence[operator]
         latex = ''
@@ -246,6 +251,19 @@ class Formula:
             infix = ''
             if operator == '/' and len(arg2) > 1:
                 return f'{self.translate_to_infix(arg1)}/({self.translate_to_infix(arg2)})'
+            if operator == '+':
+                if is_scalar_pn(arg1):
+                    arg1, arg2 = arg2, arg1
+
+                if is_scalar_pn(arg2):
+                    if arg2[0] < 0:
+                        return f'{arg1}-{-1*arg2[0]}'
+                elif arg2[0] == '*':
+                    _, product_arg1, product_arg2 = pn_split_via_operator(arg2)
+                    if is_scalar_pn(product_arg1) and product_arg1[0] < 0:
+                        return f'{self.translate_to_infix(arg1)}-' \
+                               f'{-1*product_arg1[0]}*{self.translate_to_infix(product_arg2)}'
+
             if len(arg1) == 1:
                 infix += str(arg1[0])
             elif arg1[0] in Formula.functions:
@@ -302,27 +320,33 @@ def pn_prettify(tokens: List):
                     return [arg1[0] + arg2[0]]
 
                 if arg1 == arg2:
-                    return ['*', 2] + arg1
+                    return pn_prettify(['*', 2] + arg1)
+
+                if arg2[0] == '*' and arg1[0] != '*':
+                    # since now, if there's a product in sum, it will be on the first place
+                    arg1, arg2 = arg2, arg1
+
+                if arg1[0] == '*':
+                    _, product_arg1, product_arg2 = pn_split_via_operator(arg1)
+
+                    if arg2[0] == '*':  # sum of two products #TODO: solve cases like a*b + c*b*d = b(a+c*d) and e.g.
+                        _, product2_arg1, product2_arg2 = pn_split_via_operator(arg2)
+                        if is_scalar_pn(product_arg1) and is_scalar_pn(product2_arg1):
+                            if product_arg2 == product2_arg2:
+                                return pn_prettify(
+                                    ['*'] + [product_arg1[0]+product2_arg1[0]] + ['+'] + product_arg2 + product2_arg2)
+
+                    else:  # sum has structure constant*expr1 + expr2
+                        if product_arg2 == arg2:  # constant*x + x = (constant + 1)x
+                            return pn_prettify(['*', product_arg1[0] + 1] + arg2)
+                        elif product_arg1[0] < 0:  # -constant*expr1 + expr2 = expr2 - constant*expr1
+                            return ['-'] + arg2 + ['*', -1*product_arg1[0]] + product_arg2
 
                 return ['+'] + arg1 + arg2
 
             case '-':
-                arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
-
-                if len(arg1) == 1:
-                    if arg1[0] == 0:
-                        return pn_prettify(['*'] + [-1] + arg2)
-                if len(arg2) == 1:
-                    if arg2[0] == 0:
-                        return arg1
-
-                if is_scalar_pn(arg2):
-                    if is_scalar_pn(arg1):
-                        return [arg1[0] - arg2[0]]
-                    if arg2[0] < 0:  # expression - (-scalar) = expression + scalar
-                        return ['+'] + arg1 + [arg2[0] * -1]
-
-                return ['-'] + arg1 + arg2
+                # subtraction is equal to addition
+                return pn_prettify(['+'] + arg1 + ['*', -1] + arg2)
 
             case '*':
                 arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
@@ -500,7 +524,7 @@ def __derivative_pn(tokens: List):
         match operator:
             case '+' | '-':
                 # derivative of sum is sum of derivatives
-                # derivative of difference is difference of derivatives
+                # derivative of subtraction is subtraction of derivatives
                 return pn_prettify([operator] + __derivative_pn(arg1) + __derivative_pn(arg2))
 
             case '*':
@@ -552,14 +576,11 @@ def derivative(function) -> Formula:
     return Formula(__derivative_pn(function))
 
 
-function1 = Formula('ln(3x- 0) + 5')
-function2 = Formula('1/ln(ln(x))')
-function3 = Formula('ln(x)+(ln(x))^2')
-function4 = Formula('x^ln(x)')
-print(f'function: {function1}, derivative: {derivative(function1)}')
-print(f'function: {function2}, derivative: {derivative(function2)}')
-print(f'function: {function3}, derivative: {derivative(function3)}')
-print(f'function: {function4}, derivative: {derivative(function4)}')
+formulas = ['sin (x) + 4cos(x)',
+            'x^3(3ln(x)-14sqrt(x))']
 
-print()
-print(pn_to_latex(derivative(function4).tokens))
+for function in formulas:
+    function = Formula(function)
+    print(f'function: {function}, derivative: {pn_to_latex(derivative(function).tokens)}')
+
+
