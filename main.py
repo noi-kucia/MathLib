@@ -179,7 +179,7 @@ class Formula:
             if len(arg1) == 1:
                 infix += str(arg1[0])
             elif arg1[0] in Formula.functions:
-                infix += f'({self.translate_to_infix(arg1)})'
+                infix += self.translate_to_infix(arg1)
             elif Formula.operators_precedence[arg1[0]] < conjunction_precedence:
                 infix += f'({self.translate_to_infix(arg1)})'
             else:
@@ -259,6 +259,15 @@ def pn_prettify(tokens: List):
 
                 if not is_scalar_pn(arg1):  # if any of multipliers ain't scalars
 
+                    if arg2[0] == '/':
+                        _, nominator, denominator = pn_split_via_operator(arg2)
+                        if nominator == [1]:
+                            return pn_prettify(['/'] + arg1 + denominator)
+                    if arg1[0] == '/':
+                        _, nominator, denominator = pn_split_via_operator(arg1)
+                        if nominator == [1]:
+                            return pn_prettify(['/'] + arg2 + denominator)
+
                     if arg2[0] == '*':  # if one of multipliers is product, it must be on the first place
                         arg1, arg2 = arg2, arg1
 
@@ -276,6 +285,8 @@ def pn_prettify(tokens: List):
                             return ['*'] + arg1_scalar + ['*'] + arg1_expr + arg2
                         else:
                             return ['*'] + arg1 + arg2
+
+                    return ['*'] + arg1 + arg2
 
                 if is_scalar_pn(arg2):
                     # product of two scalars is scalar
@@ -368,6 +379,12 @@ def __derivative_pn(tokens: List):
                 return pn_prettify(['*'] + __derivative_pn(argument) + ['*', -1, 'sin'] + argument)
             case 'sqrt':
                 return pn_prettify(['/'] + __derivative_pn(argument) +['*', 2, 'sqrt'] + argument)
+            case 'exp':
+                return pn_prettify(['*'] + __derivative_pn(argument) + ['exp'] + argument)
+            case 'ln':
+                return pn_prettify(['/'] + __derivative_pn(argument) + argument)
+            case _:
+                raise UnableToDifferentiateException(f'cannot find derivative of {functor}')
 
     elif operator in Formula.operators_precedence:  # function consists of 2 joined by operator
         match operator:
@@ -397,14 +414,15 @@ def __derivative_pn(tokens: List):
 
             case '^':
                 # There are 3 cases:
-                # 1. base is independent of x then it's exponential function a^x -> (e^(x*ln(a)))` = e^(x*ln(a))*(x)`
+                # 1. base is independent of x then it's exponential function a^x -> (e^(x*ln(a)))` =
+                #    = e^(x*ln(a))*(x)` * ln(a) = (a^x) * (x)` * ln(a)
                 # 2. exponent is independent of x then it power function x^n -> n*x^(n-1)*(x)`
                 # 3. both depends on x #TODO
                 if 'x' not in arg1:
-                    pass
+                    return pn_prettify(['*', '*', '^'] + arg1 + arg2 + __derivative_pn(arg2) + ['ln'] + arg1)
                 if 'x' not in arg2:
-                    return pn_prettify(['*', '*'] + arg2 + ['^'] + arg1 + pn_prettify(
-                        ['-'] + arg2 + [1]) + __derivative_pn(arg1))
+                    return pn_prettify(['*', '*'] + arg2 + ['^'] + arg1 +
+                        ['-'] + arg2 + [1] + __derivative_pn(arg1))
                 # else
                 raise UnableToDifferentiateException()
 
@@ -424,10 +442,10 @@ def derivative(function) -> Formula:
     return Formula(__derivative_pn(function))
 
 
-function1 = Formula('sin (2x)')
-function2 = Formula('8sqrt(x^7) - 2x^2 + 0')
-function3 = Formula('5sin(3x^2)/(-2)')
-function4 = Formula('(cos(3x)) ^ (2/5) - 2 sin(x)')
+function1 = Formula('ln(x)')
+function2 = Formula('((ln(5x)))')
+function3 = Formula('ln(x)+(ln(x))^2')
+function4 = Formula('2^ln(3x)')
 print(f'function: {function1}, derivative: {derivative(function1)}')
 print(f'function: {function2}, derivative: {derivative(function2)}')
 print(f'function: {function3}, derivative: {derivative(function3)}')
