@@ -16,12 +16,31 @@ def gcd(a, b):
     elif b == 0:
         return a
 
-    while b != 1 and b != 0:
+    while b != 0:
         temp = b
         b = a % b
         a = temp
 
     return a
+
+
+def get_precedence(token):
+    """returns the precedens of the operator/function from Formula class static values"""
+    if token in Formula.functions:
+        return Formula.function_precedence
+    elif token in Formula.operators_precedence:
+        return Formula.operators_precedence[token]
+    else:
+        raise Exception(f'token {token} is not known for Formula class!')
+
+
+def get_operator(tokens: List):
+    """
+    returns operator/functor of expression if it's composite, otherwise returns empty string
+    """
+    if len(tokens) == 1:
+        return ''
+    return tokens[0]
 
 
 def pn_to_latex(tokens: List):
@@ -45,23 +64,47 @@ def pn_to_latex(tokens: List):
         if operator == '/':
             return '\\frac{' + pn_to_latex(arg1) + '}{' + pn_to_latex(arg2) + '}'
         if operator == '^':
-            return pn_to_latex(arg1) + '^{' + pn_to_latex(arg2) + '}'
+            if len(arg1) == 1 or get_precedence(arg1[0]) > get_precedence('^'):
+                return pn_to_latex(arg1) + '^{' + pn_to_latex(arg2) + '}'
+            else:
+                return f'({pn_to_latex(arg1)})' + '^{' + pn_to_latex(arg2) + '}'
         if operator == '+':
-            # TODO: expr + (-expr) = expr - expr
-            pass
+            if is_scalar_pn(arg1) and arg1[0] < 0:
+                arg1, arg2 = arg2, [-1*arg1[0]]
+                operator = '-'
+            elif is_scalar_pn(arg2) and arg2[0] < 0:
+                arg2 = [-1 * arg2[0]]
+                operator = '-'
+            if arg2[0] == '*':
+                _, product_arg1, product_arg2 = pn_split_via_operator(arg2)
+                if is_scalar_pn(product_arg1) and product_arg1[0] < 0:
+                    arg2 = ['*', -1*product_arg1[0]] + product_arg2
+                    operator = '-'
+            elif arg2[0] == '/':
+                _, quotient_arg1, quotient_arg2 = pn_split_via_operator(arg2)
+                if is_scalar_pn(quotient_arg1) and quotient_arg1[0] < 0:
+                    arg2 = ['/'] + [-1*quotient_arg1[0]] + quotient_arg2
+                    return f'{pn_to_latex(arg1)}-{pn_to_latex(arg2)}'
 
-        operator_precedence = Formula.operators_precedence[operator]
+        if operator == '*' and is_scalar_pn(arg1) and arg1[0] == [-1]:
+            arg2_precedence = get_precedence(arg2[0]) if not len(arg2) == 1 else 20
+            if arg2_precedence > get_precedence('*'):
+                return f'-{pn_to_latex(arg2)}'
+            else:
+                return f'-({pn_to_latex(arg2)})'
+
+        operator_precedence = get_precedence(operator)
         latex = ''
         if len(arg1) == 1:
             oper1_prec = 20
         else:
-            oper1_prec = Formula.operators_precedence[pn_split_via_operator(arg1)[0]]\
+            oper1_prec = get_precedence(pn_split_via_operator(arg1)[0])\
                 if pn_split_via_operator(arg1)[0] not in Formula.functions\
                 else Formula.function_precedence
         if len(arg2) == 1:
             oper2_prec = 20
         else:
-            oper2_prec = Formula.operators_precedence[pn_split_via_operator(arg2)[0]]\
+            oper2_prec = get_precedence(pn_split_via_operator(arg2)[0])\
                 if pn_split_via_operator(arg2)[0] not in Formula.functions\
                 else Formula.function_precedence
         if oper1_prec < operator_precedence:
@@ -113,8 +156,9 @@ class Formula:
 
     operators_precedence = {'-': 1, '+': 1, '*': 4, '/': 4, '%': 4, '^': 6, '(': 10, ')': 10}
     functions = {'abs': abs, 'sqrt': math.sqrt, 'rt': math.sqrt, 'exp': math.exp, 'tan': math.tan, 'tg': math.tan,
-                 'sin': math.sin, 'cos': math.cos, 'log': math.log10, 'lg': math.log10,
-                 'ln': lambda x: math.log(math.e, x)}
+                 'sin': math.sin, 'cos': math.cos, 'log': math.log10, 'lg': math.log10, 'arccos': math.acos,
+                 'ln': lambda x: math.log(math.e, x), 'ctg': lambda x: 1./math.tan(x), 'arcsin': math.asin,
+                 'asin': math.asin, 'acos': math.acos, 'arctg': math.atan, 'arcctg': lambda x: -1*math.atan(x)}
     function_precedence = 8
 
     def __init__(self, formula):
@@ -190,16 +234,14 @@ class Formula:
                         raise Exception('one of the brackets is not closed')
 
                 else:
-                    current_operator_precedence = self.operators_precedence[token]
+                    current_operator_precedence = get_precedence(token)
 
                     # if operator(func) on the top of stack has higher precedence, and it is not ')'
                     # then pop it into output before push current operator on stack
                     for previous_token in operators_stack[::-1]:
                         if previous_token == ')':
                             break
-                        if current_operator_precedence < (
-                                self.function_precedence if previous_token in self.functions else
-                                self.operators_precedence[previous_token]) and not previous_token == ')':
+                        if current_operator_precedence < get_precedence(previous_token) and not previous_token == ')':
                             operators_stack.pop()
                             pn_formula.append(previous_token)
                         else:
@@ -292,6 +334,13 @@ def is_pn_single_var(tokens: List):
     return True if len(tokens) == 1 and tokens[0] == 'x' else False
 
 
+def is_constant_pn(tokens: List):
+    """ returns True only if expression is some constant value (independent of x)"""
+    if not 'x' in tokens:
+        return True
+    return False
+
+
 def pn_prettify(tokens: List):
     """
     :param tokens:
@@ -316,31 +365,47 @@ def pn_prettify(tokens: List):
                     if arg2[0] == 0:
                         return arg1
 
-                if is_scalar_pn(arg1) and is_scalar_pn(arg2):  # if both summand are scalars, we can calculate it
-                    return [arg1[0] + arg2[0]]
+                if is_constant_pn(arg1) and is_constant_pn(arg2):
+                    if is_scalar_pn(arg1) and is_scalar_pn(arg2):  # if both summand are scalars, we can calculate it
+                        return [arg1[0] + arg2[0]]
+
+                    if get_operator(arg2) == '/':
+                        arg1, arg2 = arg2, arg1
+
+                    if get_operator(arg1) == '/':
+                        _, nominator, denominator = pn_split_via_operator(arg1)
+                        if type(nominator[0]) == int and type(denominator[0]) == int:
+                            if get_operator(arg2) == '/':
+                                _, nominator2, denominator2 = pn_split_via_operator(arg2)
+                                if type(nominator2[0]) == int and type(denominator2[0]) == int:
+                                    return pn_prettify(['/', nominator[0]*denominator2[0]+nominator2[0]*denominator[0],
+                                                        denominator[0]*denominator2[0]])
+
+                            else:
+                                return pn_prettify(['/', nominator[0]+arg2[0]*denominator[0], denominator[0]])
 
                 if arg1 == arg2:
                     return pn_prettify(['*', 2] + arg1)
 
-                if arg2[0] == '*' and arg1[0] != '*':
+                if get_operator(arg2) == '*' and arg1[0] != '*':
                     # since now, if there's a product in sum, it will be on the first place
                     arg1, arg2 = arg2, arg1
 
-                if arg1[0] == '*':
+                if get_operator(arg1) == '*':
                     _, product_arg1, product_arg2 = pn_split_via_operator(arg1)
 
-                    if arg2[0] == '*':  # sum of two products #TODO: solve cases like a*b + c*b*d = b(a+c*d) and e.g.
+                    if get_operator(arg2) == '*':  # sum of two products #TODO: solve cases like a*b + c*b*d = b(a+c*d) and e.g.
                         _, product2_arg1, product2_arg2 = pn_split_via_operator(arg2)
                         if is_scalar_pn(product_arg1) and is_scalar_pn(product2_arg1):
                             if product_arg2 == product2_arg2:
                                 return pn_prettify(
                                     ['*'] + [product_arg1[0]+product2_arg1[0]] + ['+'] + product_arg2 + product2_arg2)
 
-                    else:  # sum has structure constant*expr1 + expr2
+                    elif is_scalar_pn(product_arg1):  # sum has structure constant*expr1 + expr2
                         if product_arg2 == arg2:  # constant*x + x = (constant + 1)x
                             return pn_prettify(['*', product_arg1[0] + 1] + arg2)
                         elif product_arg1[0] < 0:  # -constant*expr1 + expr2 = expr2 - constant*expr1
-                            return ['-'] + arg2 + ['*', -1*product_arg1[0]] + product_arg2
+                            return ['-'] + arg2 + pn_prettify(['*', -1*product_arg1[0]] + product_arg2)
 
                 return ['+'] + arg1 + arg2
 
@@ -359,21 +424,25 @@ def pn_prettify(tokens: List):
                     if arg1 == arg2:  # x*x = x^2
                         return ['^'] + arg1 + [2]
 
-                    if arg2[0] == '/':
+                    if get_operator(arg2) == '/':
                         _, nominator, denominator = pn_split_via_operator(arg2)
                         if nominator == [1]:
-                            return pn_prettify(['/'] + arg1 + denominator)
-                    if arg1[0] == '/':
+                            return pn_prettify()
+                        if nominator == [-1]:
+                            return pn_prettify(['*', -1, '/'] + arg1 + denominator)
+                    if get_operator(arg1) == '/':
                         _, nominator, denominator = pn_split_via_operator(arg1)
                         if nominator == [1]:
                             return pn_prettify(['/'] + arg2 + denominator)
+                        if nominator == [-1]:
+                            return pn_prettify(['*', -1, '/'] + arg2 + denominator)
 
-                    if arg2[0] == '*':  # if one of multipliers is product, it must be on the first place
+                    if get_operator(arg2) == '*':  # if one of multipliers is product, it must be on the first place
                         arg1, arg2 = arg2, arg1
 
-                    if arg1[0] == '*':
+                    if get_operator(arg1) == '*':
                         _, arg1_scalar, arg1_expr = pn_split_via_operator(arg1)
-                        if arg2[0] == '*':
+                        if get_operator(arg2) == '*':
                             _, arg2_scalar, arg2_expr = pn_split_via_operator(arg2)
                             if is_scalar_pn(arg1_scalar):
                                 if is_scalar_pn(arg2_scalar):
@@ -385,6 +454,18 @@ def pn_prettify(tokens: List):
                             return ['*'] + arg1_scalar + ['*'] + arg1_expr + arg2
                         else:
                             return ['*'] + arg1 + arg2
+
+                    if get_operator(arg2) == '^':
+                        arg1, arg2 = arg2, arg1
+
+                    if get_operator(arg1) == '^':
+                        _, base, exponent = pn_split_via_operator(arg1)
+                        if get_operator(arg2) == '^':
+                            _, base2, exponent2 = pn_split_via_operator(arg2)
+                            if base == base2:
+                                return ['^'] + base + pn_prettify(['*'] + exponent + exponent2)
+                        if base == arg2:
+                            return ['^'] + base + pn_prettify(['+'] + exponent + [1])
 
                     return ['*'] + arg1 + arg2
 
@@ -462,9 +543,17 @@ def pn_prettify(tokens: List):
             case '^':
                 arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
 
+                if is_scalar_pn(arg1) and is_scalar_pn(arg2):
+                    return pow(arg1[0], arg2[0])
+
                 if len(arg1) == 1:
                     if arg1[0] == 1:
                         return [1]
+                else:
+                    if get_operator(arg1) == '^':
+                        _, base_arg1, base_arg2 = pn_split_via_operator(arg1)
+                        return ['^'] + base_arg1 + ['*'] + base_arg2 + arg2
+
                 if len(arg2) == 1:
                     if arg2[0] == 1:
                         return arg1
@@ -517,6 +606,18 @@ def __derivative_pn(tokens: List):
                 return pn_prettify(['*'] + __derivative_pn(argument) + ['exp'] + argument)
             case 'ln':
                 return pn_prettify(['/'] + __derivative_pn(argument) + argument)
+            case 'tg':
+                return pn_prettify(['/']+ __derivative_pn(argument) + ['^', 'cos'] + argument + [2])
+            case 'ctg':
+                return pn_prettify(['/', '*', -1] + __derivative_pn(argument) + ['^', 'sin'] + argument + [2])
+            case 'arcsin':
+                return pn_prettify(['/'] + __derivative_pn(argument) + ['sqrt', '-', 1, '^'] + argument + [2])
+            case 'arccos':
+                return pn_prettify(['/', '*', -1] + __derivative_pn(argument) + ['sqrt', '-', 1, '^'] + argument + [2])
+            case 'arctg':
+                return pn_prettify(['/'] + __derivative_pn(argument) + ['+', 1, '^'] + argument + [2])
+            case 'arcctg':
+                return pn_prettify(['/', '*', -1] + __derivative_pn(argument) + ['+', 1, '^'] + argument + [2])
             case _:
                 raise UnableToDifferentiateException(f'cannot find derivative of {functor}')
 
@@ -544,7 +645,7 @@ def __derivative_pn(tokens: List):
                 if is_scalar_pn(arg2):
                     return pn_prettify(['/'] + __derivative_pn(arg1) + arg2)
                 # else
-                return pn_prettify(['/', '+', '*'] + __derivative_pn(arg1) + arg2 +
+                return pn_prettify(['/', '-', '*'] + __derivative_pn(arg1) + arg2 +
                                    ['*'] + arg1 + __derivative_pn(arg2) + ['^'] + arg2 + [2])
 
             case '^':
@@ -576,10 +677,27 @@ def derivative(function) -> Formula:
     return Formula(__derivative_pn(function))
 
 
-formulas = ['sin (x) + 4cos(x)',
-            'x^3(3ln(x)-14sqrt(x))']
+functions = [
+            'x^2 + x^7 + 1/(x^2) + x^(1/3)',
+            '(x^7-3x^2+5^x)sin(x)',
+            '(5x^3-7x+cos(x))/7^x',
+            'sin x + 4 cos x',
+            '2ln(x)-3arctg x',
+            'x^3*(3ln x -14sqrt(x))',
+            'exp(x) * ctg x',
+            '(x+1)/(x-3)',
+            'exp(x^2+1)',
+            'sin(cos(4x))',
+            'sin(3x)(2x)/(x^2+1)',
+            '(1+14sqrt(x))^11',
+            'arctg(2x+3)',
+            'x*exp(sqrt(x)+4)/(cos(14x)+4)',
+            'sqrt(ln(1/(x-1)))',
+            '(cos(3x^5-7x+2))^4',
+            'x^(4/3)'
+            ]
 
-for function in formulas:
+for function in functions:
     function = Formula(function)
     print(f'function: {function}, derivative: {pn_to_latex(derivative(function).tokens)}')
 
