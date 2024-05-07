@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 def gcd(a, b):
     """
-    returns the greatest common divisor of a and b.
+    returns the greatest common divisor of a and b using Euclidean algorithm.
     if at least 1 of arguments isn't integer, returns 1
     """
     if type(a) != int or type(b) != int:
@@ -228,7 +228,7 @@ def pn_prettify(tokens: List):
     :param tokens:
     :return: mathematically equal formula in optimized form
     It deletes all '+0' or '*1' unnecessary operations, sums all 'scalar+scalar' expressions to a single token
-    and so on
+    and so on. If it cannot optimize expression, it'll return it back in the same form.
     """
     if len(tokens) == 1:
         return tokens
@@ -392,6 +392,10 @@ def pn_prettify(tokens: List):
 
                 return ['^'] + arg1 + arg2
 
+    elif operator in Formula.functions:
+        arg1 = pn_prettify(arg1)
+        return [operator] + arg1
+
     return tokens
 
 
@@ -471,14 +475,14 @@ def derivative(function) -> Formula:
     """
     requires list of pn tokens or Formula object of single variable function on input and then returns
     derivative of it in form of Formula object.
-    If it can't calculate derivative, it will raise exception.
+    If it can't calculate derivative, it will raise an exception.
     """
     if not type(function) == list:
         function = function.tokens
     return Formula(__derivative_pn(function))
 
 
-function1 = Formula('ln(3x)')
+function1 = Formula('ln(3x- 0) + 5')
 function2 = Formula('((ln(5x)))')
 function3 = Formula('ln(x)+(ln(x))^2')
 function4 = Formula('2^ln(3x)')
