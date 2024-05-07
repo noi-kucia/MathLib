@@ -4,6 +4,25 @@ import math
 from typing import List, Tuple
 
 
+def gcd(a, b):
+    """
+    returns the greatest common divisor of a and b.
+    if at least 1 of arguments isn't integer, returns 1
+    """
+    if type(a) != int or type(b) != int:
+        return 1
+    if a == 0:
+        return b
+    elif b == 0:
+        return a
+
+    while b != 1 and b != 0:
+        temp = b
+        b = a % b
+        a = temp
+
+    return a
+
 class UnableToDifferentiateException(Exception):
     def __init__(self, message='cannot find derivative!'):
         super().__init__(message)
@@ -331,7 +350,24 @@ def pn_prettify(tokens: List):
                 if denominator == [1]:
                     return nominator
 
-                if len(nominator) > 2:
+                if is_scalar_pn(nominator):  # nominator is scalar
+                    if len(denominator) > 2:  # denominator is composite expression
+                        denominator_operator, denominator_arg1, denominator_arg2 = pn_split_via_operator(denominator)
+
+                        if denominator_operator == '*':
+                            if is_scalar_pn(denominator_arg1):
+                                divisor = gcd(nominator[0], denominator_arg1[0])
+                                if divisor > 1:
+                                    if divisor == denominator_arg1[0]:
+                                        return ['/', nominator[0] // divisor] + denominator_arg2
+                                    return ['/', nominator[0] // divisor,
+                                            '*', denominator_arg1[0] // divisor] + denominator_arg2
+                    elif is_scalar_pn(denominator):
+                        divisor = gcd(nominator[0], denominator[0])
+                        if divisor > 1:
+                            return ['/', nominator[0] // divisor, denominator[0] // divisor]
+
+                if len(nominator) > 2:  # nominator is some composite expression
                     nominator_operator, nominator_arg1, nominator_arg2 = pn_split_via_operator(nominator)
 
                     # (expression/scalar)/scalar = expression/scalar
@@ -378,7 +414,7 @@ def __derivative_pn(tokens: List):
             case 'cos':
                 return pn_prettify(['*'] + __derivative_pn(argument) + ['*', -1, 'sin'] + argument)
             case 'sqrt':
-                return pn_prettify(['/'] + __derivative_pn(argument) +['*', 2, 'sqrt'] + argument)
+                return pn_prettify(['/'] + __derivative_pn(argument) + ['*', 2, 'sqrt'] + argument)
             case 'exp':
                 return pn_prettify(['*'] + __derivative_pn(argument) + ['exp'] + argument)
             case 'ln':
@@ -422,7 +458,7 @@ def __derivative_pn(tokens: List):
                     return pn_prettify(['*', '*', '^'] + arg1 + arg2 + __derivative_pn(arg2) + ['ln'] + arg1)
                 if 'x' not in arg2:
                     return pn_prettify(['*', '*'] + arg2 + ['^'] + arg1 +
-                        ['-'] + arg2 + [1] + __derivative_pn(arg1))
+                                       ['-'] + arg2 + [1] + __derivative_pn(arg1))
                 # else
                 raise UnableToDifferentiateException()
 
@@ -442,7 +478,7 @@ def derivative(function) -> Formula:
     return Formula(__derivative_pn(function))
 
 
-function1 = Formula('ln(x)')
+function1 = Formula('ln(3x)')
 function2 = Formula('((ln(5x)))')
 function3 = Formula('ln(x)+(ln(x))^2')
 function4 = Formula('2^ln(3x)')
