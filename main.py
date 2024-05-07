@@ -23,6 +23,57 @@ def gcd(a, b):
 
     return a
 
+
+def pn_to_latex(tokens: List):
+    """
+    :param tokens: polish notation sequence
+    :return: latex (MathJax) form of expression
+    """
+    if len(tokens) == 1:
+        return str(tokens[0])
+    operator, arg1, arg2 = pn_split_via_operator(tokens)
+
+    if operator in Formula.functions:
+        if operator == 'exp':
+            return r'e^{' + pn_to_latex(arg1) + '}'
+        return f'\\{operator}\\left({pn_to_latex(arg1)}\\right)'
+
+    elif operator in Formula.operators_precedence:
+
+        if operator == '/':
+            return '\\frac{' + pn_to_latex(arg1) + '}{' + pn_to_latex(arg2) + '}'
+        if operator == '^':
+            return pn_to_latex(arg1) + '^{' + pn_to_latex(arg2) + '}'
+
+        operator_precedence = Formula.operators_precedence[operator]
+        latex = ''
+        if len(arg1) == 1:
+            oper1_prec = 20
+        else:
+            oper1_prec = Formula.operators_precedence[pn_split_via_operator(arg1)[0]]\
+                if pn_split_via_operator(arg1)[0] not in Formula.functions\
+                else Formula.function_precedence
+        if len(arg2) == 1:
+            oper2_prec = 20
+        else:
+            oper2_prec = Formula.operators_precedence[pn_split_via_operator(arg2)[0]]\
+                if pn_split_via_operator(arg2)[0] not in Formula.functions\
+                else Formula.function_precedence
+        if oper1_prec < operator_precedence:
+            latex += f'\\left({pn_to_latex(arg1)}\\right)'
+        else:
+            latex += pn_to_latex(arg1)
+        latex += operator
+        if oper2_prec < operator_precedence:
+            latex += f'\\left({pn_to_latex(arg2)}\\right)'
+        else:
+            latex += pn_to_latex(arg2)
+        return latex
+
+    else:
+        raise Exception('Unable to convert into LaTex')
+
+
 class UnableToDifferentiateException(Exception):
     def __init__(self, message='cannot find derivative!'):
         super().__init__(message)
@@ -250,6 +301,9 @@ def pn_prettify(tokens: List):
                 if is_scalar_pn(arg1) and is_scalar_pn(arg2):  # if both summand are scalars, we can calculate it
                     return [arg1[0] + arg2[0]]
 
+                if arg1 == arg2:
+                    return ['*', 2] + arg1
+
                 return ['+'] + arg1 + arg2
 
             case '-':
@@ -277,6 +331,9 @@ def pn_prettify(tokens: List):
                     arg1, arg2 = arg2, arg1
 
                 if not is_scalar_pn(arg1):  # if any of multipliers ain't scalars
+
+                    if arg1 == arg2:  # x*x = x^2
+                        return ['^'] + arg1 + [2]
 
                     if arg2[0] == '/':
                         _, nominator, denominator = pn_split_via_operator(arg2)
@@ -394,6 +451,19 @@ def pn_prettify(tokens: List):
 
     elif operator in Formula.functions:
         arg1 = pn_prettify(arg1)
+
+        if operator == 'exp':
+            if len(arg1) > 2:
+                exp_operator, exp_arg1, exp_arg2 = pn_split_via_operator(arg1)
+                if exp_operator == '*':
+                    if exp_arg1[0] == 'ln':
+                        return ['^'] + exp_arg1[1:] + exp_arg2
+                    if exp_arg2[0] == 'ln':
+                        return ['^'] + exp_arg2[1:] + exp_arg1
+                if exp_operator == '^':
+                    if exp_arg1[0] == 'ln':
+                        return pn_prettify(['^'] + exp_arg1[1:] + ['^'] + exp_arg1 + ['-'] + exp_arg2 + [1])
+
         return [operator] + arg1
 
     return tokens
@@ -444,6 +514,7 @@ def __derivative_pn(tokens: List):
                 # if numerator of fraction is scalar, then treat it like scalar * power function
                 # if denumerator is scalar, then treat it like scalar * some function
                 # in other case, use the quotient rule
+
                 if is_scalar_pn(arg1):
                     return pn_prettify(['*'] + arg1 + __derivative_pn(['^'] + arg2 + [-1]))
                 if is_scalar_pn(arg2):
@@ -453,18 +524,17 @@ def __derivative_pn(tokens: List):
                                    ['*'] + arg1 + __derivative_pn(arg2) + ['^'] + arg2 + [2])
 
             case '^':
-                # There are 3 cases:
-                # 1. base is independent of x then it's exponential function a^x -> (e^(x*ln(a)))` =
-                #    = e^(x*ln(a))*(x)` * ln(a) = (a^x) * (x)` * ln(a)
-                # 2. exponent is independent of x then it power function x^n -> n*x^(n-1)*(x)`
-                # 3. both depends on x #TODO
-                if 'x' not in arg1:
-                    return pn_prettify(['*', '*', '^'] + arg1 + arg2 + __derivative_pn(arg2) + ['ln'] + arg1)
+                # There are 2 cases:
+                # 1. exponent is independent of x then it power function x^n -> n*x^(n-1)*(x)`
+                # 2. in other case it's  exponential function y^x = e^(ln(y^x)) -> (e^(x*ln(y)))` =
+                #    = e^(x*ln(y)) * (x*ln(y))`
+
                 if 'x' not in arg2:
                     return pn_prettify(['*', '*'] + arg2 + ['^'] + arg1 +
                                        ['-'] + arg2 + [1] + __derivative_pn(arg1))
                 # else
-                raise UnableToDifferentiateException()
+                return pn_prettify(
+                    ['*', 'exp', '*'] + arg2 + ['ln'] + arg1 + __derivative_pn(['*'] + arg2 + ['ln'] + arg1))
 
     else:
         raise UnableToDifferentiateException(
@@ -483,10 +553,13 @@ def derivative(function) -> Formula:
 
 
 function1 = Formula('ln(3x- 0) + 5')
-function2 = Formula('((ln(5x)))')
+function2 = Formula('1/ln(ln(x))')
 function3 = Formula('ln(x)+(ln(x))^2')
-function4 = Formula('2^ln(3x)')
+function4 = Formula('x^ln(x)')
 print(f'function: {function1}, derivative: {derivative(function1)}')
 print(f'function: {function2}, derivative: {derivative(function2)}')
 print(f'function: {function3}, derivative: {derivative(function3)}')
 print(f'function: {function4}, derivative: {derivative(function4)}')
+
+print()
+print(pn_to_latex(derivative(function4).tokens))
