@@ -25,7 +25,7 @@ def gcd(a, b):
 
 
 def get_precedence(token):
-    """returns the precedens of the operator/function from Formula class static values"""
+    """returns the precedence of the operator/function from Formula class static values"""
     if token in Formula.functions:
         return Formula.function_precedence
     elif token in Formula.operators_precedence:
@@ -373,16 +373,16 @@ def pn_prettify(tokens: List):
                         arg1, arg2 = arg2, arg1
 
                     if get_operator(arg1) == '/':
-                        _, nominator, denominator = pn_split_via_operator(arg1)
-                        if type(nominator[0]) == int and type(denominator[0]) == int:
+                        _, numerator, denominator = pn_split_via_operator(arg1)
+                        if type(numerator[0]) == int and type(denominator[0]) == int:
                             if get_operator(arg2) == '/':
                                 _, nominator2, denominator2 = pn_split_via_operator(arg2)
                                 if type(nominator2[0]) == int and type(denominator2[0]) == int:
-                                    return pn_prettify(['/', nominator[0]*denominator2[0]+nominator2[0]*denominator[0],
+                                    return pn_prettify(['/', numerator[0]*denominator2[0]+nominator2[0]*denominator[0],
                                                         denominator[0]*denominator2[0]])
 
                             else:
-                                return pn_prettify(['/', nominator[0]+arg2[0]*denominator[0], denominator[0]])
+                                return pn_prettify(['/', numerator[0]+arg2[0]*denominator[0], denominator[0]])
 
                 if arg1 == arg2:
                     return pn_prettify(['*', 2] + arg1)
@@ -425,16 +425,16 @@ def pn_prettify(tokens: List):
                         return ['^'] + arg1 + [2]
 
                     if get_operator(arg2) == '/':
-                        _, nominator, denominator = pn_split_via_operator(arg2)
-                        if nominator == [1]:
+                        _, numerator, denominator = pn_split_via_operator(arg2)
+                        if numerator == [1]:
                             return pn_prettify()
-                        if nominator == [-1]:
+                        if numerator == [-1]:
                             return pn_prettify(['*', -1, '/'] + arg1 + denominator)
                     if get_operator(arg1) == '/':
-                        _, nominator, denominator = pn_split_via_operator(arg1)
-                        if nominator == [1]:
+                        _, numerator, denominator = pn_split_via_operator(arg1)
+                        if numerator == [1]:
                             return pn_prettify(['/'] + arg2 + denominator)
-                        if nominator == [-1]:
+                        if numerator == [-1]:
                             return pn_prettify(['*', -1, '/'] + arg2 + denominator)
 
                     if get_operator(arg2) == '*':  # if one of multipliers is product, it must be on the first place
@@ -490,47 +490,47 @@ def pn_prettify(tokens: List):
                         if is_scalar_pn(expression_arg1):
                             return ['*', arg1[0] * expression_arg1[0]] + expression_arg2
                     case '/':
-                        nomin, denomin = expression_arg1, expression_arg2
+                        numerator, denominator = expression_arg1, expression_arg2
 
-                        if is_scalar_pn(nomin):
-                            return ['/', scalar] + denomin  # scalar*(scalar/expr) = scalar * expr
-                        if nomin == ['x']:
+                        if is_scalar_pn(numerator):
+                            return ['/', scalar] + denominator  # scalar*(scalar/expr) = scalar * expr
+                        if numerator == ['x']:
                             return ['*'] + arg1 + arg2
 
-                        nomin_operator, nomin_arg1, nomin_arg2 = pn_split_via_operator(nomin)
+                        nomin_operator, nomin_arg1, nomin_arg2 = pn_split_via_operator(numerator)
                         if nomin_operator == '*' and is_scalar_pn(nomin_arg1):
                             #  scalar * [(scalar*expr)/ expr]= (scalar*expr)/expr
-                            return ['/', '*', scalar * nomin_arg1[0]] + nomin_arg2 + denomin
+                            return ['/', '*', scalar * nomin_arg1[0]] + nomin_arg2 + denominator
 
                 return ['*'] + arg1 + arg2
 
             case '/':
-                nominator, denominator = pn_prettify(arg1), pn_prettify(arg2)
+                numerator, denominator = pn_prettify(arg1), pn_prettify(arg2)
 
-                if nominator == [0]:
+                if numerator == [0]:
                     return [0]
                 if denominator == [1]:
-                    return nominator
+                    return numerator
 
-                if is_scalar_pn(nominator):  # nominator is scalar
+                if is_scalar_pn(numerator):  # numerator is scalar
                     if len(denominator) > 2:  # denominator is composite expression
                         denominator_operator, denominator_arg1, denominator_arg2 = pn_split_via_operator(denominator)
 
                         if denominator_operator == '*':
                             if is_scalar_pn(denominator_arg1):
-                                divisor = gcd(nominator[0], denominator_arg1[0])
+                                divisor = gcd(numerator[0], denominator_arg1[0])
                                 if divisor > 1:
                                     if divisor == denominator_arg1[0]:
-                                        return ['/', nominator[0] // divisor] + denominator_arg2
-                                    return ['/', nominator[0] // divisor,
+                                        return ['/', numerator[0] // divisor] + denominator_arg2
+                                    return ['/', numerator[0] // divisor,
                                             '*', denominator_arg1[0] // divisor] + denominator_arg2
                     elif is_scalar_pn(denominator):
-                        divisor = gcd(nominator[0], denominator[0])
+                        divisor = gcd(numerator[0], denominator[0])
                         if divisor > 1:
-                            return ['/', nominator[0] // divisor, denominator[0] // divisor]
+                            return ['/', numerator[0] // divisor, denominator[0] // divisor]
 
-                if len(nominator) > 2:  # nominator is some composite expression
-                    nominator_operator, nominator_arg1, nominator_arg2 = pn_split_via_operator(nominator)
+                if len(numerator) > 2:  # numerator is some composite expression
+                    nominator_operator, nominator_arg1, nominator_arg2 = pn_split_via_operator(numerator)
 
                     # (expression/scalar)/scalar = expression/scalar
                     if is_scalar_pn(denominator):
@@ -538,7 +538,7 @@ def pn_prettify(tokens: List):
                             if type(denominator[0]) == int and type(nominator_arg2[0]) == int:  # to avoid float error
                                 return ['/'] + nominator_arg1 + [denominator[0] * nominator_arg2[0]]
 
-                return ['/'] + nominator + denominator
+                return ['/'] + numerator + denominator
 
             case '^':
                 arg1, arg2 = pn_prettify(arg1), pn_prettify(arg2)
@@ -607,7 +607,7 @@ def __derivative_pn(tokens: List):
             case 'ln':
                 return pn_prettify(['/'] + __derivative_pn(argument) + argument)
             case 'tg':
-                return pn_prettify(['/']+ __derivative_pn(argument) + ['^', 'cos'] + argument + [2])
+                return pn_prettify(['/'] + __derivative_pn(argument) + ['^', 'cos'] + argument + [2])
             case 'ctg':
                 return pn_prettify(['/', '*', -1] + __derivative_pn(argument) + ['^', 'sin'] + argument + [2])
             case 'arcsin':
@@ -637,7 +637,7 @@ def __derivative_pn(tokens: List):
                 return pn_prettify(['+'] + ['*'] + __derivative_pn(arg1) + arg2 + ['*'] + arg1 + __derivative_pn(arg2))
             case '/':
                 # if numerator of fraction is scalar, then treat it like scalar * power function
-                # if denumerator is scalar, then treat it like scalar * some function
+                # if denominator is scalar, then treat it like scalar * some function
                 # in other case, use the quotient rule
 
                 if is_scalar_pn(arg1):
@@ -699,6 +699,8 @@ functions = [
 
 for function in functions:
     function = Formula(function)
-    print(f'function: {function}, derivative: {pn_to_latex(derivative(function).tokens)}')
+    print(f'function: ${pn_to_latex(function.tokens)}$   \nderivative: ${pn_to_latex(derivative(function).tokens)}$\n')
+    print('\\', '='*100, sep='')
+    print()
 
 
